@@ -1,98 +1,120 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '@/lib/supabase';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+export default function LoginScreen() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
+  async function handleLogin() {
+    if (!email.trim() || !password.trim()) {
+      setError('Enter your email and password');
+      return;
+    }
+    setLoading(true);
+    setError('');
+
+    const { error: loginError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    setLoading(false);
+    if (loginError) {
+      setError(loginError.message);
+    }
   }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+
   return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
+        <Text style={styles.logo}>Cloutinet</Text>
+        <Text style={styles.subtitle}>Business Visibility Operating System</Text>
 
-export default function HomeScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          placeholderTextColor="#94A3B8"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+        <TextInput
+          style={styles.input}
+          placeholder="Password"
+          placeholderTextColor="#94A3B8"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+        <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Log In</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
+    backgroundColor: '#0F172A',
   },
-  safeArea: {
+  content: {
     flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+    paddingHorizontal: 24,
   },
-  title: {
+  logo: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: '#94A3B8',
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  input: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    marginBottom: 12,
+    color: '#0F172A',
+  },
+  error: {
+    color: '#FCA5A5',
+    fontSize: 13,
+    marginBottom: 12,
     textAlign: 'center',
   },
-  code: {
-    textTransform: 'uppercase',
+  button: {
+    backgroundColor: '#2563EB',
+    borderRadius: 8,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginTop: 8,
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  buttonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
