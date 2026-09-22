@@ -23,9 +23,10 @@ const COLORS = {
   muted: '#94A3B8',
   accent: '#3B82F6',
   danger: '#F87171',
+  success: '#22C55E',
 };
 
-type Session = {
+export type Session = {
   accessToken: string;
   userId: string;
   email: string;
@@ -36,6 +37,23 @@ type Profile = {
   business_category: string | null;
   phone: string | null;
   location: string | null;
+  tagline: string | null;
+  business_hours: string | null;
+  services: string | null;
+  facebook_url: string | null;
+  instagram_url: string | null;
+};
+
+const EMPTY_PROFILE: Profile = {
+  business_name: '',
+  business_category: '',
+  phone: '',
+  location: '',
+  tagline: '',
+  business_hours: '',
+  services: '',
+  facebook_url: '',
+  instagram_url: '',
 };
 
 function Field({
@@ -44,12 +62,14 @@ function Field({
   onChangeText,
   secure,
   keyboardType,
+  multiline,
 }: {
   label: string;
   value: string;
   onChangeText: (t: string) => void;
   secure?: boolean;
   keyboardType?: 'default' | 'email-address' | 'phone-pad';
+  multiline?: boolean;
 }) {
   return (
     <View style={{ marginBottom: 14 }}>
@@ -63,6 +83,7 @@ function Field({
         keyboardType={keyboardType || 'default'}
         autoCapitalize="none"
         autoCorrect={false}
+        multiline={multiline}
         placeholderTextColor={COLORS.muted}
         style={{
           backgroundColor: COLORS.card,
@@ -73,31 +94,27 @@ function Field({
           fontSize: 15,
           paddingHorizontal: 14,
           paddingVertical: 12,
+          minHeight: multiline ? 90 : undefined,
+          textAlignVertical: multiline ? 'top' : 'center',
         }}
       />
     </View>
   );
 }
 
-function SignedInView({
-  session,
-  onLogout,
-}: {
-  session: Session;
-  onLogout: () => void;
-}) {
-  const insets = useSafeAreaInsets();
-  const [profile, setProfile] = useState<Profile | null>(null);
+function EditProfileForm({ session }: { session: Session }) {
+  const [profile, setProfile] = useState<Profile>(EMPTY_PROFILE);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     fetch(
       SUPABASE_URL +
-        '/rest/v1/profiles?select=business_name,business_category,phone,location&id=eq.' +
+        '/rest/v1/profiles?select=business_name,business_category,phone,location,tagline,business_hours,services,facebook_url,instagram_url&id=eq.' +
         session.userId,
       {
         headers: {
@@ -112,10 +129,24 @@ function SignedInView({
         return res.json();
       })
       .then((data: Profile[]) => {
-        if (!cancelled) setProfile(data[0] || null);
+        if (cancelled) return;
+        if (data[0]) {
+          const p = data[0];
+          setProfile({
+            business_name: p.business_name || '',
+            business_category: p.business_category || '',
+            phone: p.phone || '',
+            location: p.location || '',
+            tagline: p.tagline || '',
+            business_hours: p.business_hours || '',
+            services: p.services || '',
+            facebook_url: p.facebook_url || '',
+            instagram_url: p.instagram_url || '',
+          });
+        }
       })
       .catch(() => {
-        if (!cancelled) setError("Couldn't load your business profile.");
+        if (!cancelled) setLoadError("Couldn't load your business profile.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -125,62 +156,185 @@ function SignedInView({
     };
   }, [session.userId, session.accessToken]);
 
+  const set = (key: keyof Profile) => (val: string) =>
+    setProfile((p) => ({ ...p, [key]: val }));
+
+  const save = async () => {
+    setSaving(true);
+    setSaveError(null);
+    setSaved(false);
+    try {
+      const res = await fetch(
+        SUPABASE_URL + '/rest/v1/profiles?id=eq.' + session.userId,
+        {
+          method: 'PATCH',
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: 'Bearer ' + session.accessToken,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify(profile),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Save failed with status ' + res.status);
+      }
+      setSaved(true);
+    } catch (e: any) {
+      setSaveError(e.message || 'Something went wrong. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={{ paddingTop: 40, alignItems: 'center' }}>
+        <ActivityIndicator color={COLORS.accent} />
+      </View>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <Text style={{ color: COLORS.muted, fontSize: 14, marginTop: 20 }}>
+        {loadError}
+      </Text>
+    );
+  }
+
+  return (
+    <View style={{ marginTop: 20 }}>
+      <Field
+        label="Business name"
+        value={profile.business_name || ''}
+        onChangeText={set('business_name')}
+      />
+      <Field
+        label="Category"
+        value={profile.business_category || ''}
+        onChangeText={set('business_category')}
+      />
+      <Field
+        label="Phone (WhatsApp number)"
+        value={profile.phone || ''}
+        onChangeText={set('phone')}
+        keyboardType="phone-pad"
+      />
+      <Field
+        label="Location"
+        value={profile.location || ''}
+        onChangeText={set('location')}
+      />
+      <Field
+        label="Tagline"
+        value={profile.tagline || ''}
+        onChangeText={set('tagline')}
+        multiline
+      />
+      <Field
+        label="Opening hours"
+        value={profile.business_hours || ''}
+        onChangeText={set('business_hours')}
+        multiline
+      />
+      <Field
+        label="Services (comma separated)"
+        value={profile.services || ''}
+        onChangeText={set('services')}
+        multiline
+      />
+      <Field
+        label="Facebook URL"
+        value={profile.facebook_url || ''}
+        onChangeText={set('facebook_url')}
+      />
+      <Field
+        label="Instagram URL"
+        value={profile.instagram_url || ''}
+        onChangeText={set('instagram_url')}
+      />
+
+      {!!saveError && (
+        <Text
+          style={{
+            color: COLORS.danger,
+            fontSize: 14,
+            marginBottom: 12,
+            lineHeight: 20,
+          }}
+        >
+          {saveError}
+        </Text>
+      )}
+      {saved && (
+        <Text
+          style={{
+            color: COLORS.success,
+            fontSize: 14,
+            marginBottom: 12,
+          }}
+        >
+          Saved.
+        </Text>
+      )}
+
+      <Pressable
+        onPress={save}
+        disabled={saving}
+        style={{
+          backgroundColor: COLORS.accent,
+          borderRadius: 12,
+          paddingVertical: 15,
+          alignItems: 'center',
+          opacity: saving ? 0.7 : 1,
+        }}
+      >
+        {saving ? (
+          <ActivityIndicator color="#FFFFFF" />
+        ) : (
+          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>
+            Save changes
+          </Text>
+        )}
+      </Pressable>
+    </View>
+  );
+}
+
+function SignedInView({
+  session,
+  onLogout,
+}: {
+  session: Session;
+  onLogout: () => void;
+}) {
+  const insets = useSafeAreaInsets();
   return (
     <View
       style={{ flex: 1, backgroundColor: COLORS.bg, paddingTop: insets.top }}
     >
       <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
-      <View style={{ paddingHorizontal: 20, paddingTop: 24 }}>
-        <Text style={{ color: COLORS.text, fontSize: 24, fontWeight: '800' }}>
-          My Account
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }}
+      >
+        <Text
+          style={{
+            color: COLORS.text,
+            fontSize: 24,
+            fontWeight: '800',
+            marginTop: 24,
+          }}
+        >
+          My Business
         </Text>
         <Text style={{ color: COLORS.muted, fontSize: 14, marginTop: 4 }}>
           {session.email}
         </Text>
 
-        <View
-          style={{
-            backgroundColor: COLORS.card,
-            borderWidth: 1,
-            borderColor: COLORS.border,
-            borderRadius: 14,
-            padding: 16,
-            marginTop: 24,
-          }}
-        >
-          {loading ? (
-            <ActivityIndicator color={COLORS.accent} />
-          ) : error ? (
-            <Text style={{ color: COLORS.muted, fontSize: 14 }}>{error}</Text>
-          ) : profile && profile.business_name ? (
-            <View>
-              <Text
-                style={{ color: COLORS.text, fontSize: 18, fontWeight: '700' }}
-              >
-                {profile.business_name}
-              </Text>
-              {!!profile.business_category && (
-                <Text
-                  style={{ color: COLORS.accent, fontSize: 14, marginTop: 4 }}
-                >
-                  {profile.business_category}
-                </Text>
-              )}
-              {!!profile.location && (
-                <Text
-                  style={{ color: COLORS.muted, fontSize: 14, marginTop: 4 }}
-                >
-                  {profile.location}
-                </Text>
-              )}
-            </View>
-          ) : (
-            <Text style={{ color: COLORS.muted, fontSize: 14, lineHeight: 20 }}>
-              No business profile found on this account yet. Set one up on
-              the Cloutinet website for now.
-            </Text>
-          )}
-        </View>
+        <EditProfileForm session={session} />
 
         <Pressable
           onPress={onLogout}
@@ -197,7 +351,7 @@ function SignedInView({
             Log out
           </Text>
         </Pressable>
-      </View>
+      </ScrollView>
     </View>
   );
 }
