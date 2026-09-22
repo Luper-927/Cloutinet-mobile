@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StatusBar,
   Text,
@@ -34,6 +35,7 @@ export type Session = {
 
 type Profile = {
   business_name: string | null;
+  business_slug: string | null;
   business_category: string | null;
   phone: string | null;
   location: string | null;
@@ -46,6 +48,7 @@ type Profile = {
 
 const EMPTY_PROFILE: Profile = {
   business_name: '',
+  business_slug: '',
   business_category: '',
   phone: '',
   location: '',
@@ -55,6 +58,14 @@ const EMPTY_PROFILE: Profile = {
   facebook_url: '',
   instagram_url: '',
 };
+
+function authHeaders(session: Session, extra?: Record<string, string>) {
+  return {
+    apikey: SUPABASE_KEY,
+    Authorization: 'Bearer ' + session.accessToken,
+    ...extra,
+  };
+}
 
 function Field({
   label,
@@ -102,79 +113,151 @@ function Field({
   );
 }
 
-function EditProfileForm({ session }: { session: Session }) {
-  const [profile, setProfile] = useState<Profile>(EMPTY_PROFILE);
+function StatCard({ label, value }: { label: string; value: number | null }) {
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: COLORS.card,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        borderRadius: 14,
+        padding: 16,
+        marginRight: 10,
+      }}
+    >
+      <Text style={{ color: COLORS.accent, fontSize: 26, fontWeight: '800' }}>
+        {value === null ? '—' : value}
+      </Text>
+      <Text style={{ color: COLORS.muted, fontSize: 13, marginTop: 4 }}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function Dashboard({
+  session,
+  businessSlug,
+}: {
+  session: Session;
+  businessSlug: string;
+}) {
+  const [views, setViews] = useState<number | null>(null);
+  const [clicks, setClicks] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const since = new Date();
+      since.setDate(since.getDate() - 30);
+      const sinceIso = since.toISOString();
+
+      const [viewsRes, clicksRes] = await Promise.all([
+        fetch(
+          SUPABASE_URL +
+            '/rest/v1/analytics_events?select=id&business_slug=eq.' +
+            encodeURIComponent(businessSlug) +
+            '&event_type=eq.page_view&created_at=gte.' +
+            sinceIso,
+          {
+            headers: authHeaders(session, {
+              Prefer: 'count=exact',
+              Range: '0-0',
+            }),
+          }
+        ),
+        fetch(
+          SUPABASE_URL +
+            '/rest/v1/analytics_events?select=id&business_slug=eq.' +
+            encodeURIComponent(businessSlug) +
+            '&event_type=eq.whatsapp_click&created_at=gte.' +
+            sinceIso,
+          {
+            headers: authHeaders(session, {
+              Prefer: 'count=exact',
+              Range: '0-0',
+            }),
+          }
+        ),
+      ]);
+
+      if (!viewsRes.ok || !clicksRes.ok) {
+        throw new Error('status ' + viewsRes.status + '/' + clicksRes.status);
+      }
+
+      const viewsCount = viewsRes.headers.get('content-range');
+      const clicksCount = clicksRes.headers.get('content-range');
+      setViews(viewsCount ? Number(viewsCount.split('/')[1]) : 0);
+      setClicks(clicksCount ? Number(clicksCount.split('/')[1]) : 0);
+    } catch {
+      setError("Couldn't load your stats.");
+    } finally {
+      setLoading(false);
+    }
+  }, [session, businessSlug]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <View style={{ marginTop: 20 }}>
+      <Text style={{ color: COLORS.text, fontSize: 18, fontWeight: '700' }}>
+        Last 30 days
+      </Text>
+      {loading ? (
+        <View style={{ marginTop: 14 }}>
+          <ActivityIndicator color={COLORS.accent} />
+        </View>
+      ) : error ? (
+        <Text style={{ color: COLORS.muted, fontSize: 14, marginTop: 10 }}>
+          {error}
+        </Text>
+      ) : (
+        <View style={{ flexDirection: 'row', marginTop: 14 }}>
+          <StatCard label="Profile views" value={views} />
+          <StatCard label="WhatsApp clicks" value={clicks} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+function EditProfileForm({
+  session,
+  profile,
+  setProfile,
+}: {
+  session: Session;
+  profile: Profile;
+  setProfile: (p: Profile) => void;
+}) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  React.useEffect(() => {
-    let cancelled = false;
-    fetch(
-      SUPABASE_URL +
-        '/rest/v1/profiles?select=business_name,business_category,phone,location,tagline,business_hours,services,facebook_url,instagram_url&id=eq.' +
-        session.userId,
-      {
-        headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: 'Bearer ' + session.accessToken,
-          Accept: 'application/json',
-        },
-      }
-    )
-      .then((res) => {
-        if (!res.ok) throw new Error('status ' + res.status);
-        return res.json();
-      })
-      .then((data: Profile[]) => {
-        if (cancelled) return;
-        if (data[0]) {
-          const p = data[0];
-          setProfile({
-            business_name: p.business_name || '',
-            business_category: p.business_category || '',
-            phone: p.phone || '',
-            location: p.location || '',
-            tagline: p.tagline || '',
-            business_hours: p.business_hours || '',
-            services: p.services || '',
-            facebook_url: p.facebook_url || '',
-            instagram_url: p.instagram_url || '',
-          });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setLoadError("Couldn't load your business profile.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [session.userId, session.accessToken]);
-
   const set = (key: keyof Profile) => (val: string) =>
-    setProfile((p) => ({ ...p, [key]: val }));
+    setProfile({ ...profile, [key]: val });
 
   const save = async () => {
     setSaving(true);
     setSaveError(null);
     setSaved(false);
     try {
+      const { business_slug, ...editable } = profile;
       const res = await fetch(
         SUPABASE_URL + '/rest/v1/profiles?id=eq.' + session.userId,
         {
           method: 'PATCH',
-          headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: 'Bearer ' + session.accessToken,
+          headers: authHeaders(session, {
             'Content-Type': 'application/json',
             Prefer: 'return=minimal',
-          },
-          body: JSON.stringify(profile),
+          }),
+          body: JSON.stringify(editable),
         }
       );
       if (!res.ok) {
@@ -189,24 +272,18 @@ function EditProfileForm({ session }: { session: Session }) {
     }
   };
 
-  if (loading) {
-    return (
-      <View style={{ paddingTop: 40, alignItems: 'center' }}>
-        <ActivityIndicator color={COLORS.accent} />
-      </View>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <Text style={{ color: COLORS.muted, fontSize: 14, marginTop: 20 }}>
-        {loadError}
-      </Text>
-    );
-  }
-
   return (
-    <View style={{ marginTop: 20 }}>
+    <View style={{ marginTop: 28 }}>
+      <Text
+        style={{
+          color: COLORS.text,
+          fontSize: 18,
+          fontWeight: '700',
+          marginBottom: 14,
+        }}
+      >
+        Edit business
+      </Text>
       <Field
         label="Business name"
         value={profile.business_name || ''}
@@ -270,13 +347,7 @@ function EditProfileForm({ session }: { session: Session }) {
         </Text>
       )}
       {saved && (
-        <Text
-          style={{
-            color: COLORS.success,
-            fontSize: 14,
-            marginBottom: 12,
-          }}
-        >
+        <Text style={{ color: COLORS.success, fontSize: 14, marginBottom: 12 }}>
           Saved.
         </Text>
       )}
@@ -312,6 +383,54 @@ function SignedInView({
   onLogout: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const [profile, setProfile] = useState<Profile>(EMPTY_PROFILE);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadProfile = useCallback(
+    async (isRefresh: boolean) => {
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
+      setLoadError(null);
+      try {
+        const res = await fetch(
+          SUPABASE_URL +
+            '/rest/v1/profiles?select=business_name,business_slug,business_category,phone,location,tagline,business_hours,services,facebook_url,instagram_url&id=eq.' +
+            session.userId,
+          { headers: authHeaders(session, { Accept: 'application/json' }) }
+        );
+        if (!res.ok) throw new Error('status ' + res.status);
+        const data: Profile[] = await res.json();
+        if (data[0]) {
+          const p = data[0];
+          setProfile({
+            business_name: p.business_name || '',
+            business_slug: p.business_slug || '',
+            business_category: p.business_category || '',
+            phone: p.phone || '',
+            location: p.location || '',
+            tagline: p.tagline || '',
+            business_hours: p.business_hours || '',
+            services: p.services || '',
+            facebook_url: p.facebook_url || '',
+            instagram_url: p.instagram_url || '',
+          });
+        }
+      } catch {
+        setLoadError("Couldn't load your business profile.");
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [session]
+  );
+
+  useEffect(() => {
+    loadProfile(false);
+  }, [loadProfile]);
+
   return (
     <View
       style={{ flex: 1, backgroundColor: COLORS.bg, paddingTop: insets.top }}
@@ -319,6 +438,14 @@ function SignedInView({
       <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadProfile(true)}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
       >
         <Text
           style={{
@@ -334,7 +461,26 @@ function SignedInView({
           {session.email}
         </Text>
 
-        <EditProfileForm session={session} />
+        {loading ? (
+          <View style={{ paddingTop: 40, alignItems: 'center' }}>
+            <ActivityIndicator color={COLORS.accent} />
+          </View>
+        ) : loadError ? (
+          <Text style={{ color: COLORS.muted, fontSize: 14, marginTop: 20 }}>
+            {loadError}
+          </Text>
+        ) : (
+          <>
+            {!!profile.business_slug && (
+              <Dashboard session={session} businessSlug={profile.business_slug} />
+            )}
+            <EditProfileForm
+              session={session}
+              profile={profile}
+              setProfile={setProfile}
+            />
+          </>
+        )}
 
         <Pressable
           onPress={onLogout}
