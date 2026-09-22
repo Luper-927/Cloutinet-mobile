@@ -1,23 +1,19 @@
 {
   "expo": {
-    "name": "cloutinet-app",
+    "name": "Cloutinet",
     "slug": "cloutinet-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/cloutinet-icon.png",
     "scheme": "cloutinetapp",
     "userInterfaceStyle": "automatic",
-    "ios": {
-      "icon": "./assets/expo.icon"
-    },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#020B33",
+        "foregroundImage": "./assets/images/cloutinet-icon-foreground.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.cloutinet.app"
     },
     "web": {
       "output": "static",
@@ -28,15 +24,22 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#020B33",
+          "image": "./assets/images/cloutinet-icon-foreground.png",
+          "imageWidth": 200
         }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c362cc40-aad4-4088-94a9-eaca51e53575"
+      }
+    },
+    "owner": "luper927s-team"
   }
 }
